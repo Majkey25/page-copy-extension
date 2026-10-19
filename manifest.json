@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Page Copy",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "minimum_chrome_version": "120",
   "description": "Copy lossless screenshots or text. Save original PNG, AI image tiles with text, PDF, or TXT.",
   "homepage_url": "https://github.com/Majkey25/page-copy-extension",

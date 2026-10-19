@@ -96,7 +96,8 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
   try {
     context = await chromium.launchPersistentContext(profile, {
       channel: "chromium", headless: !headed, viewport: {width: 1200, height: 800}, deviceScaleFactor: dpr,
-      args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, `--force-device-scale-factor=${dpr}`, "--enable-unsafe-extension-debugging"],
+      // Keep font antialiasing consistent between visible and offscreen captures.
+      args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, `--force-device-scale-factor=${dpr}`, "--disable-lcd-text", "--enable-unsafe-extension-debugging"],
       acceptDownloads: true,
     });
     const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
@@ -204,6 +205,12 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
         const value = await popup.evaluate('({busy: document.querySelector("#copy-button").disabled, status: document.querySelector("#status").textContent})');
         return !value.busy && value;
       });
+      // Fractional display scales can make the viewport wider than the fixture body.
+      const metricsSession = await context.newCDPSession(source);
+      const {cssContentSize} = await metricsSession.send("Page.getLayoutMetrics");
+      await metricsSession.detach();
+      const expectedWidth = Math.ceil(cssContentSize.width * ratio);
+      const expectedHeight = Math.ceil(cssContentSize.height * ratio);
       if (resize === "always") {
         assert.match(state.status, /kept changing size after 3 capture attempts/);
         assert.equal(await source.evaluate(() => document.body.dataset.captureGrowthCount), "3");
@@ -221,15 +228,15 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
         assert.ok(download.filename.endsWith(`.${format}`));
         if (format === "png") {
           assert.ok(file.length > 2_000_000, "Verify the real download path with a large image.");
-          assert.equal(file.readUInt32BE(16), Math.ceil(width * ratio));
-          assert.equal(file.readUInt32BE(20), Math.ceil(height * ratio));
+          assert.equal(file.readUInt32BE(16), expectedWidth);
+          assert.equal(file.readUInt32BE(20), expectedHeight);
         } else if (format === "zip") {
           const entries = unzipSync(file);
           assert.match(new TextDecoder().decode(entries["page.txt"]), /Příliš žluťoučký kůň/);
           const manifest = JSON.parse(new TextDecoder().decode(entries["tiles.json"]));
-          assert.equal(manifest.width, Math.ceil(width * dpr));
-          assert.equal(manifest.height, Math.ceil(height * dpr));
-          assert.equal(manifest.pixelRatio, dpr);
+          assert.equal(manifest.width, expectedWidth);
+          assert.equal(manifest.height, expectedHeight);
+          assert.equal(manifest.pixelRatio, ratio);
           for (const tile of manifest.tiles) {
             const png = Buffer.from(entries[tile.name]);
             assert.equal(png.readUInt32BE(16), tile.width);
@@ -237,8 +244,8 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
             assert.ok(tile.width <= 1536 && tile.height <= 1536);
           }
           const last = manifest.tiles.at(-1);
-          assert.equal(last.y + last.height, Math.ceil(height * dpr));
-          const tile = manifest.tiles.find((tile) => tile.x === 0 && tile.y <= 2040 * dpr && tile.y + tile.height >= 2104 * dpr);
+          assert.equal(last.y + last.height, expectedHeight);
+          const tile = manifest.tiles.find((tile) => tile.x === 0 && tile.y <= 2040 * ratio && tile.y + tile.height >= 2104 * ratio);
           assert.ok(tile, "The overlap must keep the small text together in an AI tile.");
           const matches = await source.evaluate(async ({reference, png, tile, dpr}) => {
             const decode = async (data) => createImageBitmap(await (await fetch(`data:image/png;base64,${data}`)).blob());
@@ -253,7 +260,7 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
             const actual = drawing.getImageData(0, 0, canvas.width, canvas.height).data;
             baseline.close(); image.close();
             return expected.every((byte, index) => byte === actual[index]);
-          }, {reference: reference.toString("base64"), png: Buffer.from(entries[tile.name]).toString("base64"), tile, dpr});
+          }, {reference: reference.toString("base64"), png: Buffer.from(entries[tile.name]).toString("base64"), tile, dpr: ratio});
           assert.ok(matches, "AI tile must preserve every original small-text pixel.");
         } else if (format === "txt") {
           assert.match(file.toString("utf8"), /Příliš žluťoučký kůň/);
@@ -286,7 +293,7 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
           const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
           const drawing = canvas.getContext("2d");
           drawing.drawImage(bitmap, 0, 0);
-          const pixel = (x, y) => [...drawing.getImageData(Math.floor(x * bitmap.width / width), Math.floor(y * bitmap.height / height), 1, 1).data].slice(0, 3);
+          const pixel = (x, y) => [...drawing.getImageData(Math.floor(x * dpr), Math.floor(y * dpr), 1, 1).data].slice(0, 3);
           const baseline = await createImageBitmap(await (await fetch(`data:image/png;base64,${reference}`)).blob());
           const small = new OffscreenCanvas(baseline.width, baseline.height);
           const smallDrawing = small.getContext("2d");
@@ -300,8 +307,8 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
           bitmap.close();
           return result;
         }, {width, height, dpr: ratio, reference: reference.toString("base64")});
-        assert.equal(image.width, Math.ceil(width * ratio));
-        assert.equal(image.height, Math.ceil(height * ratio));
+        assert.equal(image.width, expectedWidth);
+        assert.equal(image.height, expectedHeight);
         assert.ok(image.exactTextPixels, `Clipboard must preserve every original nine-pixel-text pixel: ${JSON.stringify(image.differences)}`);
         assert.deepEqual(image.top, [220, 30, 30]);
         assert.deepEqual(image.middle, [20, 180, 40]);

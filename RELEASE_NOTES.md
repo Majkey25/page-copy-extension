@@ -1,4 +1,4 @@
-# Page Copy 1.1.0
+# Page Copy 1.1.1
 
 - Keep original device pixels in saved and clipboard PNGs, including HiDPI screens and browser zoom. Large pages are no longer silently reduced.
 - Use **Copy text for AI** or save UTF-8 TXT to preserve page text without image resizing or OCR.
