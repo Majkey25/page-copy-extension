@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Příliš žluťoučká stránka</title>
+  <style>
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { position: relative; display: flow-root; margin: 0; background: linear-gradient(#fafafa, #bbb); }
+    header { position: fixed; top: 0; left: 0; width: 100%; height: 50px; background: rgb(220, 30, 30); z-index: 10; }
+    h1 { margin: 60px 20px; }
+    .middle { position: absolute; top: 4000px; left: 100px; width: 120px; height: 120px; background: rgb(20, 180, 40); }
+    #lazy { position: absolute; top: 7000px; left: 300px; width: 128px; height: 128px; }
+    footer { position: absolute; bottom: 0; left: 0; width: 100%; height: 80px; background: rgb(20, 60, 210); }
+  </style>
+</head>
+<body>
+  <header>Fixed header</header>
+  <h1>Full-page capture fixture</h1>
+  <div class="middle"></div>
+  <img id="lazy" loading="lazy" src="/lazy.svg" alt="Lazy image">
+  <img loading="lazy" src="/lazy.svg?hidden" alt="Hidden image" style="display:none">
+  <footer>FINAL PIXEL</footer>
+</body>
+</html>

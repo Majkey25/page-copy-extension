@@ -27,7 +27,7 @@ async function capture(tabId, action) {
       await chrome.debugger.attach(target, "1.3");
       attached = true;
     } catch (error) {
-      throw new Error(`Cannot capture this tab. Close its DevTools and try again. ${error.message}`);
+      throw new Error(`Cannot capture this tab. Close its DevTools and try again. ${error.message}`, {cause: error});
     }
     const [prepared] = await chrome.scripting.executeScript({target: {tabId}, func: preparePage});
     if (prepared?.result?.error) throw new Error(prepared.result.error);

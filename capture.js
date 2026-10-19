@@ -35,6 +35,7 @@ export function capturePlan(width, height) {
 }
 
 export function screenshotFilename(title) {
+  // eslint-disable-next-line no-control-regex -- Windows filenames cannot contain control characters.
   const name = (title || "page").normalize("NFC").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-").replace(/[. ]+$/g, "").trim().slice(0, 100).replace(/[. ]+$/g, "");
   return `page-copy-${name || "page"}.png`;
 }

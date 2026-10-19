@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Page Copy screenshot camera</title>
+  <rect x="2" y="2" width="124" height="124" rx="22" fill="#fff" stroke="#111" stroke-width="4"/>
+  <path d="M38 40 47 24h34l9 16H38Z" fill="#111"/>
+  <rect x="17" y="39" width="94" height="66" rx="11" fill="#111"/>
+  <circle cx="64" cy="72" r="23" fill="#fff"/>
+  <circle cx="64" cy="72" r="15" fill="#111"/>
+  <rect x="94" y="49" width="9" height="6" rx="1" fill="#fff"/>
+</svg>
