@@ -1,0 +1,14 @@
+{
+  "name": "page-copy-extension",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Copy or save a full-page screenshot with two buttons.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "check": "node --check background.js && node --check capture.js && node --check offscreen.js && node --check popup.js",
+    "package": "node scripts/package.js"
+  },
+  "author": "Matěj Teplý",
+  "license": "MIT"
+}

@@ -1,0 +1,6 @@
+node_modules/
+.reference/
+dist/
+*.zip
+.env*
+*.pem
