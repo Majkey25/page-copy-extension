@@ -1,15 +1,15 @@
 {
   "name": "page-copy-extension",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Copy or save a full-page screenshot with two buttons.",
+  "description": "Copy lossless full-page screenshots or text and export PNG, AI tiles, PDF, or TXT.",
   "type": "module",
   "scripts": {
     "lint": "eslint . --max-warnings 0",
     "icons": "node scripts/icons.js",
     "test": "node --test tests/*.test.js",
     "test:browser": "node --test --test-concurrency=1 tests/browser/*.test.js",
-    "check": "node --check background.js && node --check capture.js && node --check offscreen.js && node --check popup.js",
+    "check": "node --check archive.js && node --check background.js && node --check capture.js && node --check offscreen.js && node --check popup.js",
     "package": "node scripts/package.js",
     "verify:package": "node scripts/check-package.js",
     "unpack:package": "node scripts/unpack-package.js"

@@ -12,6 +12,9 @@ body { width: 320px; margin: 0; }
 h1 { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: 0.12em; }
 .format, footer { font: 700 11px/1.5 "Courier New", Courier, monospace; letter-spacing: 0.04em; }
 .actions { display: grid; gap: 10px; padding: 16px; }
+label { font-size: 12px; font-weight: 700; }
+select { width: 100%; padding: 9px 7px; border: 1px solid #000; background: #fff; color: #000; font: 12px Arial, Helvetica, sans-serif; }
+#format-help { margin: 0; font-size: 12px; line-height: 1.5; }
 .button { min-height: 40px; padding: 10px 13px; border: 1px solid #000; border-radius: 0; cursor: pointer; font: 800 11px Arial, Helvetica, sans-serif; letter-spacing: 0.08em; }
 .button-primary { background: #000; color: #fff; }
 .button-secondary { background: #fff; color: #000; }

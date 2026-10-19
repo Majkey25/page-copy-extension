@@ -13,7 +13,7 @@ if (process.env.GITHUB_REF_TYPE === "tag") {
   assert.equal(process.env.GITHUB_REF_NAME, `v${manifest.version}`, "The release tag must match manifest.json.");
 }
 const files = [
-  "LICENSE", "PRIVACY.md", "background.js", "capture.js", "manifest.json", "offscreen.html", "offscreen.js",
+  "LICENSE", "PRIVACY.md", "archive.js", "background.js", "capture.js", "manifest.json", "offscreen.html", "offscreen.js",
   "popup.css", "popup.html", "popup.js", "icons/icon.svg", ...Object.values(manifest.icons),
 ];
 const zip = await readFile(resolve(root, "dist", "page-copy-extension.zip"));

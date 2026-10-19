@@ -1,8 +1,8 @@
 # Privacy
 
-Page Copy captures the page only after you click **Copy to clipboard** or **Save as…**.
+Page Copy captures the page only after you click **Copy PNG**, **Copy text for AI**, or **Save as…**.
 
-Images are assembled in memory on your device. Copy writes the PNG to your clipboard. Save writes it to the location you choose. The extension does not read the clipboard, send screenshots to a server, collect analytics, or store browsing history.
+Images and page text are processed in memory on your device. Copy writes PNG or rendered page text to your clipboard. Save writes PNG, AI tiles with page text and source metadata in a ZIP, PDF, or TXT to the location you choose. Text exports include the page title and URL. The extension does not read the clipboard, send exports to a server, collect analytics, or store browsing history.
 
 The extension temporarily scrolls the selected page to load content and restores its position after capture. The website may receive its usual requests when lazy content loads. Chrome's debugger attaches only for capture and detaches afterward.
 

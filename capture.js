@@ -2,42 +2,48 @@ const TILE_SIZE = 2048;
 const MAX_PIXELS = 64_000_000;
 const MAX_SIDE = 32767;
 
-export function capturePlan(width, height) {
-  if (![width, height].every((value) => Number.isFinite(value) && value > 0)) {
+export function capturePlan(width, height, pixelRatio = 1, tiled = false) {
+  if (![width, height, pixelRatio].every((value) => Number.isFinite(value) && value > 0)) {
     throw new Error("The page has no capturable area.");
   }
-  width = Math.ceil(width);
-  height = Math.ceil(height);
-  if (Math.ceil(width / TILE_SIZE) * Math.ceil(height / TILE_SIZE) > 256) {
-    throw new Error("This page is too large for one image. Capture a shorter page.");
+  width = Math.ceil(width * pixelRatio);
+  height = Math.ceil(height * pixelRatio);
+  const size = tiled ? 1536 : TILE_SIZE;
+  const step = tiled ? size - 64 : size;
+  const columns = Math.max(1, Math.ceil((width - size) / step) + 1);
+  const rows = Math.max(1, Math.ceil((height - size) / step) + 1);
+  if (columns * rows > 256) {
+    throw new Error("This page is too large to capture safely. Use text or PDF, or capture a shorter page.");
   }
-  const scale = Math.min(1, MAX_SIDE / width, MAX_SIDE / height, Math.sqrt(MAX_PIXELS / (width * height)));
-  const outputWidth = Math.max(1, Math.floor(width * scale));
-  const outputHeight = Math.max(1, Math.floor(height * scale));
+  if (!tiled && (width > MAX_SIDE || height > MAX_SIDE || width * height > MAX_PIXELS)) {
+    throw new Error("This page is too large for one lossless PNG. Choose AI tiles (ZIP), PDF, or text. No pixels were reduced.");
+  }
   const tiles = [];
-  for (let y = 0; y < height; y += TILE_SIZE) {
-    for (let x = 0; x < width; x += TILE_SIZE) {
-      const right = Math.min(x + TILE_SIZE, width);
-      const bottom = Math.min(y + TILE_SIZE, height);
-      const leftOut = Math.round(x * outputWidth / width);
-      const topOut = Math.round(y * outputHeight / height);
+  for (let row = 0; row < rows; row++) {
+    const y = row * step;
+    for (let column = 0; column < columns; column++) {
+      const x = column * step;
+      const tileWidth = Math.min(size, width - x);
+      const tileHeight = Math.min(size, height - y);
       tiles.push({
-        clip: {x, y, width: right - x, height: bottom - y, scale: 1},
-        destination: {
-          x: leftOut, y: topOut,
-          width: Math.round(right * outputWidth / width) - leftOut,
-          height: Math.round(bottom * outputHeight / height) - topOut,
-        },
+        clip: {x: x / pixelRatio, y: y / pixelRatio, width: tileWidth / pixelRatio, height: tileHeight / pixelRatio, scale: 1},
+        destination: {x, y, width: tileWidth, height: tileHeight},
       });
     }
   }
-  return {width: outputWidth, height: outputHeight, tiles};
+  return {width, height, pixelRatio, tiles};
 }
 
-export function screenshotFilename(title) {
+export function screenshotFilename(title, extension = "png") {
   // eslint-disable-next-line no-control-regex -- Windows filenames cannot contain control characters.
-  const name = (title || "page").normalize("NFC").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-").replace(/[. ]+$/g, "").trim().slice(0, 100).replace(/[. ]+$/g, "");
-  return `page-copy-${name || "page"}.png`;
+  const name = (title || "page").normalize("NFC").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-").replace(/[. ]+$/g, "").trim().slice(0, 100).replace(/[. ]+$/g, "").toWellFormed();
+  return `page-copy-${name || "page"}.${extension}`;
+}
+
+export function readPage(includeText = true) {
+  const text = includeText ? `${document.title}\n${location.href}\n\n${document.body?.innerText || ""}` : "";
+  if (text.length > 8_000_000) return {error: "The page text exceeds the safe export limit. Capture a shorter page."};
+  return {pixelRatio: window.devicePixelRatio, text};
 }
 
 // Runs in Chrome's isolated world, without access to the extension's APIs.

@@ -5,8 +5,8 @@
 <h1 align="center">Page Copy</h1>
 
 <p align="center">
-  Capture the whole page as one image.<br>
-  Two buttons. Copy to clipboard or save as PNG.
+  Capture the whole page without shrinking its pixels.<br>
+  Copy PNG or text. Save PNG, AI tiles, PDF, or TXT.
 </p>
 
 <p align="center">
@@ -34,7 +34,9 @@
 ## Features
 
 - Capture the full document without scrolling or stitching screenshots yourself.
-- Copy one PNG to the clipboard or open **Save as…** for a file.
+- Copy a lossless PNG at the page's device pixel ratio, including HiDPI.
+- Copy page text directly into an AI chat without image resizing or OCR.
+- Save PNG, overlapping PNG tiles with text in a ZIP, PDF, or UTF-8 TXT.
 - Automatically visit the page to trigger lazy-loaded images.
 - Restore the original scroll position after capture, including on errors.
 - Use the minimal black and white interface from [Tab Copy](https://github.com/Majkey25/tab-copy-extension).
@@ -71,41 +73,52 @@ Open a normal website and click the extension icon. Choose one action:
 
 | Button | Result |
 | --- | --- |
-| **COPY TO CLIPBOARD** | Copy the full-page PNG, then paste it into an app that accepts images. |
-| **SAVE AS…** | Choose a filename and location in the browser's save dialog. |
+| **COPY PNG** | Copy a full-page lossless `image/png` without reducing pixels. |
+| **COPY TEXT FOR AI** | Copy the page's rendered text, title, and URL as plain text. |
+| **SAVE AS…** | Save the selected format through the browser's save dialog. |
+
+For a long page in an AI chat, use **COPY TEXT FOR AI** for exact text. For visual details, save **AI tiles (ZIP)**, extract it, and attach the numbered PNGs individually in order. Each tile is at most 1,536 × 1,536 device pixels, with 64 pixels of overlap so text at a boundary remains visible. The archive includes `page.txt` and `tiles.json` with tile positions and pixel ratio. A chat must support ZIP extraction to read the archive directly.
+
+PNG compression is lossless, but a receiving chat can still resize any pasted or uploaded image. The extension cannot control that processing or guarantee that every AI model reads the smallest text. Changing an image's file extension does not prevent resizing. Plain text avoids this image-processing step.
+
+PDF uses Chrome's print renderer and keeps selectable text where the page provides it. Print styles and pagination can change the layout. TXT and text copying use the main document's rendered text. They do not perform OCR or extract text from images, canvas, embedded frames, or content absent from the DOM. Keep the PNG tiles for those visual details.
+
+Text copying and TXT export read the current document immediately without scrolling or waiting for images. Screenshot and PDF exports prepare lazy content first.
 
 Keep the popup open until copying finishes. Close DevTools on the source tab before capture. Chrome briefly displays its debugger banner while Page Copy works.
 
 ## How capture works
 
-Page Copy visits the page automatically, captures small regions through Chrome's debugger API, and joins them into one PNG. Small tiles avoid requesting a single oversized screenshot. The extension restores your scroll position and detaches the debugger after completion or failure. Cleanup continues if you close the popup.
+Page Copy visits the page automatically and captures small PNG regions through Chrome's debugger API. It joins them without resampling for a single PNG, or stores the original tile bytes in an AI ZIP. Small tiles avoid requesting a single oversized screenshot. If the document changes dimensions, the extension discards the incomplete image and retries the whole capture, up to three attempts. It restores your scroll position and detaches the debugger after completion or failure. Cleanup continues if you close the popup.
 
 The extension uses the same rendering engine as DevTools. It cannot bypass browser restrictions or enterprise capture policies.
 
 ## Capture limits
 
-Ordinary pages use one output pixel per CSS pixel. Very large pages are scaled to fit the full captured area within the image limits.
+Images retain the original device pixels at the current page zoom. Large pages are never silently scaled down. Use AI tiles, PDF, or text when a single PNG exceeds its limits.
 
 | Limit | Behavior |
 | --- | --- |
-| Output size | At most 64 million pixels and 32,767 pixels per side. |
+| Single PNG | At most 64 million pixels and 32,767 pixels per side; larger captures fail with alternatives. |
 | Preparation | Up to 20 seconds of automatic page traversal, then bounded image loading waits. |
 | Capture size | Up to 256 tiles. |
-| PNG transfer | Up to 40 MB. Larger images fail with an explicit error. |
+| Screenshot command | Up to 30 seconds per tile, then an error and cleanup if Chrome stops responding. |
+| PNG, ZIP, or PDF transfer | Up to 40 MB per export. Larger files fail with an explicit error. |
+| Page text | Up to 8 million characters. Larger text fails explicitly. |
 
-Only the main document's scrollable area is captured. Independently scrolling panels, virtualized lists, infinite feeds, protected video, PDFs, browser pages, and restricted sites cannot be guaranteed as complete screenshots. Slow images and pages that change size can report an error. Animations and video remain live during capture.
+Only the main document's scrollable area is captured. Independently scrolling panels, virtualized lists, infinite feeds, protected video, PDFs, browser pages, and restricted sites cannot be guaranteed as complete screenshots. Slow images and pages that continue changing size after three capture attempts can report an error. Animations and video remain live during capture.
 
 ## Privacy and permissions
 
-Screenshots stay on your device. Page Copy never reads your clipboard, sends screenshots to a server, or stores browsing history. Loading lazy content can contact the original website normally. Saved files and clipboard contents remain until you delete or replace them. Read the [privacy policy](PRIVACY.md).
+Screenshots and exported page text stay on your device. Page Copy never reads your clipboard, sends exports to a server, or stores browsing history. Loading lazy content can contact the original website normally. Saved files and clipboard contents remain until you delete or replace them. Read the [privacy policy](PRIVACY.md).
 
 | Permission | Purpose |
 | --- | --- |
 | `activeTab` | Access the page you select by opening the extension. |
 | `debugger` | Capture regions beyond the visible viewport. |
 | `scripting` | Trigger lazy content and restore the scroll position. |
-| `clipboardWrite` | Write the PNG after you click Copy. |
-| `downloads` | Open Save as for the PNG. |
+| `clipboardWrite` | Write PNG or page text after you click Copy. |
+| `downloads` | Open Save as for the selected format. |
 | `offscreen` | Assemble tiles in a temporary hidden document. |
 
 ## Development
@@ -132,7 +145,7 @@ The camera icon has a vector source at `icons/icon.svg`. After editing it, run `
 
 [CI](https://github.com/Majkey25/page-copy-extension/actions/workflows/ci.yml) runs on pull requests and pushes to `main`. It checks ESLint, JavaScript syntax, unit tests, dependency vulnerabilities, archive contents, source bytes, and checksums. Real Chromium tests run on Linux and Windows.
 
-Browser checks cover clipboard image pixels, lazy content, hidden images, fixed headers, HiDPI, a 50,000-pixel-tall page, horizontal overflow, Save as above 2 MB, oversized PNG errors, and cleanup after closing the popup. Automation bypasses the native OS file picker when verifying downloads.
+Browser checks cover exact small-text pixels in clipboard PNG and AI tiles, lazy content, hidden images and text, fixed headers, HiDPI and fractional pixel ratios, a 50,000-pixel-tall page, resize retries, text copying, all save formats, horizontal overflow, Save as above 2 MB, oversized PNG errors, and cleanup after closing the popup. The Windows PDF scenario uses a headed browser. Automation bypasses the native OS file picker when verifying downloads.
 
 Push a stable tag matching `manifest.json` and `package.json`, such as `v1.0.0`, to run the release workflow. It repeats the checks against the exact release ZIP and publishes a normal GitHub Release. Publication requires all checks to pass and the remote tag to match the tested commit. Only newer versions become the latest release. Third-party Actions are pinned to full commit SHAs, and repository write access is limited to the publish job.
 
