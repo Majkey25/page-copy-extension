@@ -119,7 +119,8 @@ npm run check
 npm test
 npm run package
 npm run verify:package
-npx playwright install --with-deps chromium
+npm run unpack:package
+npx playwright install --with-deps --no-shell chromium
 npm run test:browser
 ```
 
@@ -133,7 +134,7 @@ The camera icon has a vector source at `icons/icon.svg`. After editing it, run `
 
 Browser checks cover clipboard image pixels, lazy content, hidden images, fixed headers, HiDPI, a 50,000-pixel-tall page, horizontal overflow, Save as above 2 MB, oversized PNG errors, and cleanup after closing the popup. Automation bypasses the native OS file picker when verifying downloads.
 
-Push a stable tag matching `manifest.json` and `package.json`, such as `v1.0.0`, to run the release workflow. It repeats the checks and publishes the verified ZIP and checksum as a normal GitHub Release. Release assets are uploaded only after all checks pass. Third-party Actions are pinned to full commit SHAs, and repository write access is limited to the publish job.
+Push a stable tag matching `manifest.json` and `package.json`, such as `v1.0.0`, to run the release workflow. It repeats the checks against the exact release ZIP and publishes a normal GitHub Release. Publication requires all checks to pass and the remote tag to match the tested commit. Only newer versions become the latest release. Third-party Actions are pinned to full commit SHAs, and repository write access is limited to the publish job.
 
 See [release notes](RELEASE_NOTES.md) and [published releases](https://github.com/Majkey25/page-copy-extension/releases). GitHub Releases provide unpacked installation files. Page Copy is not listed in the Chrome Web Store.
 

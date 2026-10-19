@@ -17,7 +17,7 @@ const files = [
   "popup.css", "popup.html", "popup.js", "icons/icon.svg", ...Object.values(manifest.icons),
 ];
 const zip = await readFile(resolve(root, "dist", "page-copy-extension.zip"));
-const archive = unzipSync(zip);
+export const archive = unzipSync(zip);
 assert.deepEqual(Object.keys(archive).sort(), files.sort(), "The ZIP must contain only extension files.");
 for (const file of files) {
   assert.deepEqual(Buffer.from(archive[file]), await readFile(resolve(root, file)), `${file} differs from source.`);

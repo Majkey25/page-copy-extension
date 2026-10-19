@@ -65,6 +65,7 @@ async function openPopup(context, source, extensionId) {
     return result.result.value;
   };
   await send("Runtime.enable");
+  await waitFor(() => evaluate('document.readyState === "complete" && document.querySelectorAll("button").length === 2'), 5000);
   assert.equal(await evaluate('document.querySelectorAll("button").length'), 2);
   return {
     errors, evaluate,

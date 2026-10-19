@@ -11,7 +11,8 @@
     "test:browser": "node --test --test-concurrency=1 tests/browser/*.test.js",
     "check": "node --check background.js && node --check capture.js && node --check offscreen.js && node --check popup.js",
     "package": "node scripts/package.js",
-    "verify:package": "node scripts/check-package.js"
+    "verify:package": "node scripts/check-package.js",
+    "unpack:package": "node scripts/unpack-package.js"
   },
   "author": "Matěj Teplý",
   "license": "MIT",
