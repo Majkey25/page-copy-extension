@@ -36,25 +36,33 @@ async function handle(message) {
   }
   if (!files && (!canvas || !context)) throw new Error("Screenshot assembly was interrupted.");
   if (message.action === "tile") {
-    const blob = await (await fetch(`data:image/png;base64,${message.data}`)).blob();
+    let blob = await (await fetch(`data:image/png;base64,${message.data}`)).blob();
     const {x, y, width, height} = message.destination;
     const header = new DataView(await blob.slice(16, 24).arrayBuffer());
-    if (header.getUint32(0) !== width || header.getUint32(4) !== height) {
-      throw new Error("The screenshot pixel ratio changed. Keep the zoom unchanged and try again.");
+    const sourceWidth = header.getUint32(0);
+    const sourceHeight = header.getUint32(4);
+    if (sourceWidth < width || sourceHeight < height || sourceWidth > width + message.padding || sourceHeight > height + message.padding) {
+      throw new Error(`Chrome returned an unexpected screenshot size (${sourceWidth} × ${sourceHeight}, expected ${width} × ${height}). Please try again.`);
     }
-    if (files) {
-      totalBytes += blob.size;
-      if (totalBytes > 40_000_000 || files.length >= 256) throw new Error("The AI archive exceeds the safe export limit. Use text or capture a shorter page.");
-      const name = `tile-${String(files.length + 1).padStart(3, "0")}.png`;
-      files.push({name, bytes: new Uint8Array(await blob.arrayBuffer())});
-      tiles.push({name, ...message.destination});
-      return {ok: true};
-    }
-    const image = await createImageBitmap(blob);
+    // Trim only the extra right/bottom pixels requested for Chrome's DIP rounding.
+    const image = await createImageBitmap(blob, 0, 0, width, height);
     try {
-      context.drawImage(image, x, y);
+      if (files) {
+        if (sourceWidth !== width || sourceHeight !== height) {
+          const tile = new OffscreenCanvas(width, height);
+          tile.getContext("2d", {alpha: false}).drawImage(image, 0, 0);
+          blob = await tile.convertToBlob({type: "image/png"});
+        }
+        totalBytes += blob.size;
+        if (totalBytes > 40_000_000 || files.length >= 256) throw new Error("The AI archive exceeds the safe export limit. Use text or capture a shorter page.");
+        const name = `tile-${String(files.length + 1).padStart(3, "0")}.png`;
+        files.push({name, bytes: new Uint8Array(await blob.arrayBuffer())});
+        tiles.push({name, ...message.destination});
+      } else {
+        context.drawImage(image, x, y);
+      }
+      return {ok: true};
     } finally { image.close(); }
-    return {ok: true};
   }
   if (message.action === "finish") {
     if (files) {

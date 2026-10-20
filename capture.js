@@ -2,8 +2,8 @@ const TILE_SIZE = 2048;
 const MAX_PIXELS = 64_000_000;
 const MAX_SIDE = 32767;
 
-export function capturePlan(width, height, pixelRatio = 1, tiled = false) {
-  if (![width, height, pixelRatio].every((value) => Number.isFinite(value) && value > 0)) {
+export function capturePlan(width, height, pixelRatio = 1, tiled = false, zoom = 1) {
+  if (![width, height, pixelRatio, zoom].every((value) => Number.isFinite(value) && value > 0)) {
     throw new Error("The page has no capturable area.");
   }
   width = Math.ceil(width * pixelRatio);
@@ -26,7 +26,8 @@ export function capturePlan(width, height, pixelRatio = 1, tiled = false) {
       const tileWidth = Math.min(size, width - x);
       const tileHeight = Math.min(size, height - y);
       tiles.push({
-        clip: {x: x / pixelRatio, y: y / pixelRatio, width: tileWidth / pixelRatio, height: tileHeight / pixelRatio, scale: 1},
+        // Released Chrome truncates fractional DIP sizes before applying display scale.
+        clip: {x: x / pixelRatio * zoom, y: y / pixelRatio * zoom, width: Math.ceil(tileWidth / pixelRatio * zoom), height: Math.ceil(tileHeight / pixelRatio * zoom), scale: 1},
         destination: {x, y, width: tileWidth, height: tileHeight},
       });
     }

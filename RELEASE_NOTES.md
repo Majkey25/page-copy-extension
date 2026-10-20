@@ -1,4 +1,8 @@
-# Page Copy 1.1.1
+# Page Copy 1.1.2
+
+- Fix persistent "The screenshot pixel ratio changed" errors when Chrome rounds screenshot regions on scaled displays.
+- Capture whole DIP dimensions and crop only surplus right/bottom pixels. Saved PNGs, clipboard PNGs, and AI ZIP tiles keep their original resolution without resampling.
+- Check exported pixels directly against the PNG tiles returned by Chrome, including tile seams and the final row. Add 150% and 175% display-scale coverage with 90% page zoom.
 
 - Keep original device pixels in saved and clipboard PNGs, including HiDPI screens and browser zoom. Large pages are no longer silently reduced.
 - Use **Copy text for AI** or save UTF-8 TXT to preserve page text without image resizing or OCR.

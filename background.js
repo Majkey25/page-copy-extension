@@ -79,14 +79,12 @@ async function capture(tabId, action, format) {
       const zoom = await chrome.tabs.getZoom(tabId);
       const [page] = await chrome.scripting.executeScript({target: {tabId, documentIds: [documentId]}, func: readPage, args: [false]});
       if (!page?.result) throw new Error("The page changed during capture. Please try again.");
-      plan = capturePlan(width, height, page.result.pixelRatio, format === "zip");
+      plan = capturePlan(width, height, page.result.pixelRatio, format === "zip", zoom);
       await imageCommand("start", {...plan, tiled: format === "zip"});
       for (const [index, tile] of plan.tiles.entries()) {
         progress(`Capturing ${index + 1} / ${plan.tiles.length}…`);
-        // CDP clips use DIPs; layout metrics use CSS pixels before page zoom.
-        const clip = {x: tile.clip.x * zoom, y: tile.clip.y * zoom, width: tile.clip.width * zoom, height: tile.clip.height * zoom, scale: 1};
-        const shot = await captureTile(target, clip);
-        await imageCommand("tile", {data: shot.data, destination: tile.destination});
+        const shot = await captureTile(target, tile.clip);
+        await imageCommand("tile", {data: shot.data, destination: tile.destination, padding: Math.ceil(plan.pixelRatio / zoom)});
       }
       const after = await chrome.debugger.sendCommand(target, "Page.getLayoutMetrics");
       if (Math.ceil(after.cssContentSize.width * plan.pixelRatio) === plan.width && Math.ceil(after.cssContentSize.height * plan.pixelRatio) === plan.height) {

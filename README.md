@@ -89,7 +89,7 @@ Keep the popup open until copying finishes. Close DevTools on the source tab bef
 
 ## How capture works
 
-Page Copy visits the page automatically and captures small PNG regions through Chrome's debugger API. It joins them without resampling for a single PNG, or stores the original tile bytes in an AI ZIP. Small tiles avoid requesting a single oversized screenshot. If the document changes dimensions, the extension discards the incomplete image and retries the whole capture, up to three attempts. It restores your scroll position and detaches the debugger after completion or failure. Cleanup continues if you close the popup.
+Page Copy visits the page automatically and captures small PNG regions through Chrome's debugger API. It joins them without resampling for a single PNG, or saves them as separate lossless PNGs in an AI ZIP. Capture regions use whole device-independent points to work around Chrome's size rounding on scaled displays; only surplus right/bottom pixels are cropped. Small tiles avoid requesting a single oversized screenshot. If the document changes dimensions, the extension discards the incomplete image and retries the whole capture, up to three attempts. It restores your scroll position and detaches the debugger after completion or failure. Cleanup continues if you close the popup.
 
 The extension uses the same rendering engine as DevTools. It cannot bypass browser restrictions or enterprise capture policies.
 
@@ -145,7 +145,7 @@ The camera icon has a vector source at `icons/icon.svg`. After editing it, run `
 
 [CI](https://github.com/Majkey25/page-copy-extension/actions/workflows/ci.yml) runs on pull requests and pushes to `main`. It checks ESLint, JavaScript syntax, unit tests, dependency vulnerabilities, archive contents, source bytes, and checksums. Real Chromium tests run on Linux and Windows.
 
-Browser checks cover exact small-text pixels in clipboard PNG and AI tiles, lazy content, hidden images and text, fixed headers, HiDPI and fractional pixel ratios, a 50,000-pixel-tall page, resize retries, text copying, all save formats, horizontal overflow, Save as above 2 MB, oversized PNG errors, and cleanup after closing the popup. The Windows PDF scenario uses a headed browser. Automation bypasses the native OS file picker when verifying downloads.
+Browser checks compare exported pixels directly with Chrome's captured PNG tiles, including small text, seams, and final rows. They cover lazy content, hidden images and text, fixed headers, HiDPI and fractional display scales through 175%, page zoom, a 50,000-pixel-tall page, resize retries, text copying, all save formats, horizontal overflow, Save as above 2 MB, oversized PNG errors, and cleanup after closing the popup. The Windows PDF scenario uses a headed browser. Automation bypasses the native OS file picker when verifying downloads.
 
 Push a stable tag matching `manifest.json` and `package.json`, such as `v1.0.0`, to run the release workflow. It repeats the checks against the exact release ZIP and publishes a normal GitHub Release. Publication requires all checks to pass and the remote tag to match the tested commit. Only newer versions become the latest release. Third-party Actions are pinned to full commit SHAs, and repository write access is limited to the publish job.
 

@@ -21,6 +21,33 @@ async function waitFor(read, timeout = 60_000) {
   throw new Error("Timed out waiting for the real browser workflow.");
 }
 
+async function assertNativePixels(page, outputs, tiles, tiled = false) {
+  assert.ok(tiles.length > 0, "Compare against the actual PNGs returned by Chrome.");
+  const mismatch = await page.evaluate(async ({outputs, tiles, tiled}) => {
+    const decode = async (url) => {
+      const blob = url ? await (await fetch(url)).blob() : await (await navigator.clipboard.read())[0].getType("image/png");
+      const image = await createImageBitmap(blob);
+      const canvas = new OffscreenCanvas(image.width, image.height);
+      canvas.getContext("2d").drawImage(image, 0, 0);
+      image.close();
+      return canvas.getContext("2d");
+    };
+    for (const [index, output] of (outputs || [{x: 0, y: 0}]).entries()) {
+      const actual = await decode(output.url);
+      for (const tile of tiled ? [tiles[index]] : tiles) {
+        const expected = await decode(`data:image/png;base64,${tile.data}`);
+        const {x, y, width, height} = tile.destination;
+        const before = expected.getImageData(0, 0, width, height).data;
+        const after = actual.getImageData(x - output.x, y - output.y, width, height).data;
+        const difference = before.findIndex((value, index) => value !== after[index]);
+        if (difference !== -1) return {x, y, difference, expected: before[difference], actual: after[difference]};
+      }
+    }
+    return null;
+  }, {outputs, tiles, tiled});
+  assert.equal(mismatch, null, `Every captured pixel, including seams and padding edges, must survive export: ${JSON.stringify(mismatch)}`);
+}
+
 // Toolbar popups are CDP targets, but are not exposed as Playwright pages.
 async function openPopup(context, source, extensionId) {
   await source.bringToFront();
@@ -71,7 +98,7 @@ async function openPopup(context, source, extensionId) {
     errors, evaluate,
     async click(action) {
       assert.ok(["copy", "save", "text"].includes(action));
-      const point = await evaluate(`(() => {const r = document.querySelector("#${action}-button").getBoundingClientRect(); return {x: r.x + r.width / 2, y: r.y + r.height / 2};})()`);
+      const point = await evaluate(`(() => {const button = document.querySelector("#${action}-button"); button.scrollIntoView({block: "center"}); const r = button.getBoundingClientRect(); return {x: r.x + r.width / 2, y: r.y + r.height / 2};})()`);
       await send("Input.dispatchMouseEvent", {type: "mousePressed", button: "left", clickCount: 1, ...point});
       await send("Input.dispatchMouseEvent", {type: "mouseReleased", button: "left", clickCount: 1, ...point});
     },
@@ -88,7 +115,7 @@ async function openPopup(context, source, extensionId) {
 }
 
 async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1, action = "copy", format = "png", noiseHeight = 0, closePopup = false, resize = false, headed = false, slowImage = false, navigate = false}) {
-  const ratio = dpr * zoom;
+  let ratio = dpr * zoom;
   await mkdir(temporary, {recursive: true});
   const profile = await mkdtemp(resolve(temporary, "chromium-"));
   let context;
@@ -96,8 +123,7 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
   try {
     context = await chromium.launchPersistentContext(profile, {
       channel: "chromium", headless: !headed, viewport: {width: 1200, height: 800}, deviceScaleFactor: dpr,
-      // Keep font antialiasing consistent between visible and offscreen captures.
-      args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, `--force-device-scale-factor=${dpr}`, "--disable-lcd-text", "--enable-unsafe-extension-debugging"],
+      args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, `--force-device-scale-factor=${dpr}`, "--enable-unsafe-extension-debugging"],
       acceptDownloads: true,
     });
     const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
@@ -132,34 +158,26 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
       window.scrollTo({top: 1370, behavior: "instant"});
     }, {width, height, noiseHeight});
     assert.ok(Math.abs(await source.evaluate(() => devicePixelRatio) - ratio) < 0.001);
+    ratio = await source.evaluate(() => devicePixelRatio);
     const originalScroll = await source.evaluate(() => scrollY);
+    const verifyPixels = !noiseHeight && !resize && !closePopup && !navigate && ["png", "zip"].includes(format);
+    if (verifyPixels) await worker.evaluate(() => {
+      const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+      globalThis.captureTiles = [];
+      chrome.runtime.sendMessage = (message, ...args) => {
+        if (message.target === "offscreen" && message.action === "start") globalThis.captureTiles = [];
+        if (message.target === "offscreen" && message.action === "tile" && globalThis.captureTiles.length < 256) {
+          globalThis.captureTiles.push({data: message.data, destination: message.destination});
+        }
+        return send(message, ...args);
+      };
+    });
     let expectedScroll = originalScroll;
     if (action === "save") {
       const protocol = await context.browser().newBrowserCDPSession();
       await protocol.send("Browser.setDownloadBehavior", {behavior: "allow", downloadPath: profile});
     }
     popup = await openPopup(context, source, extensionId);
-    await source.evaluate(async () => {
-      await document.fonts.ready;
-      window.scrollTo({top: 1900, behavior: "instant"});
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    });
-    const visible = await worker.evaluate(() => chrome.tabs.captureVisibleTab(undefined, {format: "png"}));
-    const referenceData = await source.evaluate(async ({visible, ratio}) => {
-      const bitmap = await createImageBitmap(await (await fetch(visible)).blob());
-      const bounds = document.querySelector(".tiny").getBoundingClientRect();
-      const canvas = new OffscreenCanvas(Math.round(bounds.width * ratio), Math.round(bounds.height * ratio));
-      canvas.getContext("2d").drawImage(bitmap, -Math.round(bounds.left * ratio), -Math.round(bounds.top * ratio));
-      bitmap.close();
-      const blob = await canvas.convertToBlob({type: "image/png"});
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.readAsDataURL(blob);
-      });
-    }, {visible, ratio});
-    const reference = Buffer.from(referenceData.split(",")[1], "base64");
-    await source.evaluate((top) => window.scrollTo({top, behavior: "instant"}), originalScroll);
     if (slowImage) await source.evaluate(() => {
       const image = new Image();
       image.id = "slow";
@@ -227,9 +245,13 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
         const file = await readFile(download.filename);
         assert.ok(download.filename.endsWith(`.${format}`));
         if (format === "png") {
-          assert.ok(file.length > 2_000_000, "Verify the real download path with a large image.");
+          if (noiseHeight) assert.ok(file.length > 2_000_000, "Verify the real download path with a large image.");
           assert.equal(file.readUInt32BE(16), expectedWidth);
           assert.equal(file.readUInt32BE(20), expectedHeight);
+          if (verifyPixels) {
+            const tiles = await worker.evaluate(() => globalThis.captureTiles);
+            await assertNativePixels(source, [{x: 0, y: 0, url: `data:image/png;base64,${file.toString("base64")}`}], tiles);
+          }
         } else if (format === "zip") {
           const entries = unzipSync(file);
           assert.match(new TextDecoder().decode(entries["page.txt"]), /Příliš žluťoučký kůň/);
@@ -247,21 +269,10 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
           assert.equal(last.y + last.height, expectedHeight);
           const tile = manifest.tiles.find((tile) => tile.x === 0 && tile.y <= 2040 * ratio && tile.y + tile.height >= 2104 * ratio);
           assert.ok(tile, "The overlap must keep the small text together in an AI tile.");
-          const matches = await source.evaluate(async ({reference, png, tile, dpr}) => {
-            const decode = async (data) => createImageBitmap(await (await fetch(`data:image/png;base64,${data}`)).blob());
-            const baseline = await decode(reference);
-            const image = await decode(png);
-            const canvas = new OffscreenCanvas(baseline.width, baseline.height);
-            const drawing = canvas.getContext("2d");
-            drawing.drawImage(baseline, 0, 0);
-            const expected = drawing.getImageData(0, 0, canvas.width, canvas.height).data;
-            drawing.clearRect(0, 0, canvas.width, canvas.height);
-            drawing.drawImage(image, tile.x - 20 * dpr, tile.y - 2040 * dpr);
-            const actual = drawing.getImageData(0, 0, canvas.width, canvas.height).data;
-            baseline.close(); image.close();
-            return expected.every((byte, index) => byte === actual[index]);
-          }, {reference: reference.toString("base64"), png: Buffer.from(entries[tile.name]).toString("base64"), tile, dpr: ratio});
-          assert.ok(matches, "AI tile must preserve every original small-text pixel.");
+          const tiles = await worker.evaluate(() => globalThis.captureTiles);
+          const outputs = manifest.tiles.map(({name, x, y}) => ({x, y, url: `data:image/png;base64,${Buffer.from(entries[name]).toString("base64")}`}));
+          assert.equal(outputs.length, tiles.length);
+          await assertNativePixels(source, outputs, tiles, true);
         } else if (format === "txt") {
           assert.match(file.toString("utf8"), /Příliš žluťoučký kůň/);
           assert.match(file.toString("utf8"), /FINAL PIXEL/);
@@ -287,29 +298,23 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
         assert.match(state.status, /Copied/);
         await context.grantPermissions(["clipboard-read"], {origin});
         await source.bringToFront();
-        const image = await source.evaluate(async ({width, height, dpr, reference}) => {
+        const image = await source.evaluate(async ({width, height, dpr}) => {
           const [item] = await navigator.clipboard.read();
           const bitmap = await createImageBitmap(await item.getType("image/png"));
           const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
           const drawing = canvas.getContext("2d");
           drawing.drawImage(bitmap, 0, 0);
           const pixel = (x, y) => [...drawing.getImageData(Math.floor(x * dpr), Math.floor(y * dpr), 1, 1).data].slice(0, 3);
-          const baseline = await createImageBitmap(await (await fetch(`data:image/png;base64,${reference}`)).blob());
-          const small = new OffscreenCanvas(baseline.width, baseline.height);
-          const smallDrawing = small.getContext("2d");
-          smallDrawing.drawImage(baseline, 0, 0);
-          const expected = smallDrawing.getImageData(0, 0, baseline.width, baseline.height).data;
-          const actual = drawing.getImageData(20 * dpr, 2040 * dpr, baseline.width, baseline.height).data;
-          const differences = [...expected.keys()].filter((index) => expected[index] !== actual[index]);
+          const text = drawing.getImageData(Math.round(20 * dpr), Math.round(2040 * dpr), Math.round(400 * dpr), Math.round(64 * dpr)).data;
           const headerX = Math.min(1100, window.innerWidth - 1);
-          const result = {width: bitmap.width, height: bitmap.height, exactTextPixels: expected.every((byte, index) => byte === actual[index]), differences: {count: differences.length, first: differences.slice(0, 8).map((index) => ({index, expected: expected[index], actual: actual[index]}))}, top: pixel(headerX, 10), middle: pixel(110, 4010), lazy: pixel(310, 7010), last: pixel(width - 1, height - 1), seam: pixel(headerX, 2050)};
-          baseline.close();
+          const result = {width: bitmap.width, height: bitmap.height, textInk: text.filter((value) => value < 128).length, top: pixel(headerX, 10), middle: pixel(110, 4010), lazy: pixel(310, 7010), last: pixel(width - 1, height - 1), seam: pixel(headerX, 2050)};
           bitmap.close();
           return result;
-        }, {width, height, dpr: ratio, reference: reference.toString("base64")});
+        }, {width, height, dpr: ratio});
         assert.equal(image.width, expectedWidth);
         assert.equal(image.height, expectedHeight);
-        assert.ok(image.exactTextPixels, `Clipboard must preserve every original nine-pixel-text pixel: ${JSON.stringify(image.differences)}`);
+        assert.ok(image.textInk > 100, "The nine-pixel text must be present.");
+        if (verifyPixels) await assertNativePixels(source, null, await worker.evaluate(() => globalThis.captureTiles));
         assert.deepEqual(image.top, [220, 30, 30]);
         assert.deepEqual(image.middle, [20, 180, 40]);
         assert.deepEqual(image.lazy, [180, 20, 200]);
@@ -359,6 +364,9 @@ const scenarios = [
   ["clipboard pixels, lazy content, hidden images, and fixed header", {}],
   ["HiDPI capture preserves the final row", {dpr: 2}],
   ["fractional HiDPI keeps native text pixels", {dpr: 1.25}],
+  ["150% display scale preserves clipped edge pixels", {dpr: 1.5}],
+  ["175% display scale saves PNG without losing pixels", {dpr: 1.75, action: "save"}],
+  ["175% display scale and 90% zoom export exact AI tiles", {dpr: 1.75, zoom: 0.9, action: "save", format: "zip"}],
   ["browser page zoom preserves native text pixels", {zoom: 1.25}],
   ["50,000-pixel PNG refuses silent shrinking", {height: 50000}],
   ["50,000-pixel page exports native AI tiles and text", {height: 50000, action: "save", format: "zip"}],
