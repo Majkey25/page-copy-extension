@@ -200,8 +200,9 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
   let popup;
   try {
     context = await chromium.launchPersistentContext(profile, {
-      channel: "chromium", headless: !headed, viewport: {width: 1200, height: 800}, deviceScaleFactor: dpr,
-      args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, `--force-device-scale-factor=${dpr}`, "--enable-unsafe-extension-debugging"],
+      // Viewport emulation shares CDP state with capture; use native display scale.
+      channel: "chromium", headless: !headed, viewport: null,
+      args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, `--force-device-scale-factor=${dpr}`, "--window-size=1200,800", "--enable-unsafe-extension-debugging"],
       acceptDownloads: true,
     });
     const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
@@ -456,7 +457,7 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
         assert.ok(image.textInk > 100, "The nine-pixel text must be present.");
         if (verifyPixels) await assertNativePixels(source, null, await worker.evaluate(() => globalThis.captureTiles));
         assert.deepEqual(image.top, [220, 30, 30]);
-        assert.deepEqual(image.middle, [20, 180, 40]);
+        assert.deepEqual(image.middle, [20, 180, 40], JSON.stringify(image));
         assert.deepEqual(image.lazy, [180, 20, 200]);
         if (resize !== "always") assert.deepEqual(image.last, [20, 60, 210]);
         assert.notDeepEqual(image.seam, image.top, "The fixed header must not repeat at tile boundaries.");
