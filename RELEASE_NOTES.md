@@ -1,11 +1,13 @@
-# Page Copy 1.2.2
+# Page Copy 1.2.3
 
 - Fix MHTML export aborting on growing news feeds such as Seznam. Lazy-content preparation visits the initial page area once and reports loading limits instead of blocking the export.
 - Keep Save and Copy available when images or fonts stall. Saved-export notices survive closing and reopening the popup, without new permissions.
 - Preserve the final measured screenshot area with an explicit notice if vertical growth continues after three attempts. AI ZIPs record notices in `tiles.json`; PNG pixels remain at native resolution.
+- Let the renderer settle between CDP screenshot tiles, addressing missing white regions reproduced in Windows HiDPI captures.
 - Deduplicate identical sanitized SVGs before applying the 128-asset limit, fixing SVG extraction on icon-heavy news and GitHub pages.
 - Expand browser regressions to stalled images/fonts, finite long and wide documents, continuous growth/shrinkage, native capture failure and retry, repeated icons, and notices after popup closure. Test public Seznam, GitHub home/repository, and Wikipedia exports separately from deterministic fixtures.
 - Test native display scaling without overlapping viewport emulation; retain all pixel, text, seam, and edge assertions.
+- Add headed HiDPI coverage and retain failed fixture PNGs and raw tiles in CI for diagnosis. Manual CI can select a test name; release checks always run the full suite.
 
 For AI, use Markdown or TXT for text and the PNG tiles for small visual details. A receiving chat can still resize images. SVG export extracts inline vectors; it does not turn an arbitrary page into vectors. Offline snapshots do not reproduce servers, logins, or content that was never loaded. See the [researched format guide](https://github.com/Majkey25/page-copy-extension/blob/main/docs/export-formats.md) for comparisons and limits.
 
