@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {createServer} from "node:http";
-import {mkdir, mkdtemp, readFile, rm} from "node:fs/promises";
+import {mkdir, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
 import {resolve, sep} from "node:path";
 import {setTimeout as delay} from "node:timers/promises";
 import test, {before, after} from "node:test";
@@ -456,11 +456,31 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
         assert.equal(image.height, expectedHeight);
         assert.ok(image.textInk > 100, "The nine-pixel text must be present.");
         if (verifyPixels) await assertNativePixels(source, null, await worker.evaluate(() => globalThis.captureTiles));
-        assert.deepEqual(image.top, [220, 30, 30]);
-        assert.deepEqual(image.middle, [20, 180, 40], JSON.stringify(image));
-        assert.deepEqual(image.lazy, [180, 20, 200]);
-        if (resize !== "always") assert.deepEqual(image.last, [20, 60, 210]);
-        assert.notDeepEqual(image.seam, image.top, "The fixed header must not repeat at tile boundaries.");
+        try {
+          assert.deepEqual(image.top, [220, 30, 30]);
+          assert.deepEqual(image.middle, [20, 180, 40], JSON.stringify(image));
+          assert.deepEqual(image.lazy, [180, 20, 200]);
+          if (resize !== "always") assert.deepEqual(image.last, [20, 60, 210]);
+          assert.notDeepEqual(image.seam, image.top, "The fixed header must not repeat at tile boundaries.");
+        } catch (error) {
+          try {
+            const directory = resolve(temporary, "capture-failures", `scale-${dpr}-zoom-${zoom}-headed-${headed}`);
+            await mkdir(directory, {recursive: true});
+            const encoded = await source.evaluate(async () => {
+              const blob = await (await navigator.clipboard.read())[0].getType("image/png");
+              return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(",")[1]);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(blob);
+              });
+            });
+            await writeFile(resolve(directory, "clipboard.png"), Buffer.from(encoded, "base64"));
+            await writeFile(resolve(directory, "pixels.json"), JSON.stringify(image, null, 2));
+            for (const [index, tile] of (await worker.evaluate(() => globalThis.captureTiles)).entries()) await writeFile(resolve(directory, `raw-${index}.png`), Buffer.from(tile.data, "base64"));
+          } catch (diagnosticError) { console.error("Could not save capture diagnostics:", diagnosticError.message); }
+          throw error;
+        }
       }
     }
     assert.equal(await source.evaluate(() => scrollY), expectedScroll);
@@ -516,6 +536,7 @@ after(() => new Promise((resolve, reject) => server.close((error) => error ? rej
 const scenarios = [
   ["clipboard pixels, lazy content, hidden images, and fixed header", {}],
   ["HiDPI capture preserves the final row", {dpr: 2}],
+  ["HiDPI capture preserves pixels in a headed browser", {dpr: 2, headed: process.platform === "win32"}],
   ["fractional HiDPI keeps native text pixels", {dpr: 1.25}],
   ["150% display scale preserves clipped edge pixels", {dpr: 1.5}],
   ["175% display scale saves PNG without losing pixels", {dpr: 1.75, action: "save"}],

@@ -7,6 +7,11 @@ on:
     branches: [main]
   workflow_call:
   workflow_dispatch:
+    inputs:
+      browser_test_name:
+        description: Optional browser test name pattern for diagnosis
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -70,4 +75,16 @@ jobs:
           name: extension-package
           path: dist
       - run: npm run unpack:package
-      - run: npm run test:browser
+      - name: Run browser tests
+        shell: bash
+        env:
+          BROWSER_TEST_NAME: ${{ inputs.browser_test_name || '.*' }}
+        run: node --test --test-concurrency=1 --test-name-pattern="$BROWSER_TEST_NAME" tests/browser/*.test.js
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: capture-failures-${{ matrix.os }}
+          path: .reference/tmp/capture-failures
+          if-no-files-found: ignore
+          include-hidden-files: true
+          retention-days: 7
