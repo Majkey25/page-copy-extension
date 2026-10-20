@@ -101,3 +101,12 @@ export async function preparePage() {
 export function restorePage(position) {
   window.scrollTo({left: position.x, top: position.y, behavior: "instant"});
 }
+
+export function waitForPaint() {
+  return new Promise((resolve) => {
+    let frame;
+    const done = () => { clearTimeout(timer); cancelAnimationFrame(frame); resolve(); };
+    const timer = setTimeout(done, 250);
+    frame = requestAnimationFrame(() => { frame = requestAnimationFrame(done); });
+  });
+}

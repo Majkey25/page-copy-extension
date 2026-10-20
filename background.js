@@ -1,4 +1,4 @@
-import {capturePlan, preparePage, readPage, restorePage, screenshotFilename} from "./capture.js";
+import {capturePlan, preparePage, readPage, restorePage, screenshotFilename, waitForPaint} from "./capture.js";
 import {EXPORT_LIMIT, FORMATS, textDataUrl} from "./formats.js";
 import {readExport} from "./page-data.js";
 
@@ -68,6 +68,8 @@ async function captureImage(tabId, documentId, target, tiled) {
     await imageCommand("start", {...plan, tiled});
     for (const [index, tile] of plan.tiles.entries()) {
       progress(`Capturing ${index + 1} / ${plan.tiles.length}…`);
+      // CDP restores its temporary viewport asynchronously between screenshot clips.
+      if (index) await chrome.scripting.executeScript({target: {tabId, documentIds: [documentId]}, func: waitForPaint});
       const shot = await captureCommand(target, "Page.captureScreenshot", {format: "png", clip: tile.clip, captureBeyondViewport: true, fromSurface: true});
       await imageCommand("tile", {data: shot.data, destination: tile.destination, padding: Math.ceil(plan.pixelRatio / zoom)});
     }
