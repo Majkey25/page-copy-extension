@@ -3,6 +3,7 @@ import {createHash} from "node:crypto";
 import {readFile} from "node:fs/promises";
 import {resolve} from "node:path";
 import {unzipSync} from "fflate";
+import {vendorFiles} from "./vendor-files.js";
 
 const root = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(await readFile(resolve(root, "manifest.json"), "utf8"));
@@ -14,13 +15,13 @@ if (process.env.GITHUB_REF_TYPE === "tag") {
 }
 const files = [
   "LICENSE", "PRIVACY.md", "archive.js", "background.js", "capture.js", "manifest.json", "offscreen.html", "offscreen.js",
-  "popup.css", "popup.html", "popup.js", "icons/icon.svg", ...Object.values(manifest.icons),
+  "formats.js", "page-data.js", "popup.css", "popup.html", "popup.js", "icons/icon.svg", ...Object.values(manifest.icons), ...Object.keys(vendorFiles),
 ];
 const zip = await readFile(resolve(root, "dist", "page-copy-extension.zip"));
 export const archive = unzipSync(zip);
 assert.deepEqual(Object.keys(archive).sort(), files.sort(), "The ZIP must contain only extension files.");
 for (const file of files) {
-  assert.deepEqual(Buffer.from(archive[file]), await readFile(resolve(root, file)), `${file} differs from source.`);
+  assert.deepEqual(Buffer.from(archive[file]), await readFile(resolve(root, vendorFiles[file] || file)), `${file} differs from source.`);
 }
 const checksum = `${createHash("sha256").update(zip).digest("hex")}  page-copy-extension.zip\n`;
 assert.equal(await readFile(resolve(root, "dist", "SHA256SUMS.txt"), "utf8"), checksum);

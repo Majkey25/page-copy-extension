@@ -2,13 +2,16 @@ import {cp, mkdir, readFile, readdir, rm, writeFile} from "node:fs/promises";
 import {relative, resolve, sep} from "node:path";
 import {createHash} from "node:crypto";
 import {zipSync} from "fflate";
+import {vendorFiles} from "./vendor-files.js";
 
 const root = resolve(import.meta.dirname, "..");
 const destination = resolve(root, "dist", "page-copy-extension");
 await rm(destination, {recursive: true, force: true});
 await mkdir(destination, {recursive: true});
-const files = ["manifest.json", "archive.js", "background.js", "capture.js", "popup.html", "popup.css", "popup.js", "offscreen.html", "offscreen.js", "icons", "LICENSE", "PRIVACY.md"];
+const files = ["manifest.json", "archive.js", "background.js", "capture.js", "formats.js", "page-data.js", "popup.html", "popup.css", "popup.js", "offscreen.html", "offscreen.js", "icons", "LICENSE", "PRIVACY.md"];
 for (const file of files) await cp(resolve(root, file), resolve(destination, file), {recursive: true});
+await mkdir(resolve(destination, "vendor"));
+for (const [file, source] of Object.entries(vendorFiles)) await cp(resolve(root, source), resolve(destination, file));
 const manifest = JSON.parse(await readFile(resolve(destination, "manifest.json"), "utf8"));
 const entries = await readdir(destination, {recursive: true, withFileTypes: true});
 const archive = {};

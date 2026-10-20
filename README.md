@@ -6,7 +6,7 @@
 
 <p align="center">
   Capture the whole page without shrinking its pixels.<br>
-  Copy PNG or text. Save PNG, AI tiles, PDF, or TXT.
+  Copy pixels or source code. Save complete archives, AI-ready text, and offline pages.
 </p>
 
 <p align="center">
@@ -36,11 +36,14 @@
 - Capture the full document without scrolling or stitching screenshots yourself.
 - Copy a lossless PNG at the page's device pixel ratio, including HiDPI.
 - Copy page text directly into an AI chat without image resizing or OCR.
-- Save PNG, overlapping PNG tiles with text in a ZIP, PDF, or UTF-8 TXT.
+- Save a complete ZIP with page representations, loaded resources in MHTML, and lossless PNG tiles.
+- Copy or save Markdown, structured JSON, current DOM HTML, TXT, MHTML source, and native SVG markup.
+- Save PNG, overlapping PNG tiles with text in a ZIP, or a selectable PDF.
+- Hover, focus, or click **i** beside the format selector for its best use and limitations.
 - Automatically visit the page to trigger lazy-loaded images.
 - Restore the original scroll position after capture, including on errors.
 - Use the minimal black and white interface from [Tab Copy](https://github.com/Majkey25/tab-copy-extension).
-- Process images locally with no account, server, tracking, or runtime dependencies.
+- Process exports locally with no account, server, or tracking. Conversion libraries are bundled in the extension.
 
 ## Download
 
@@ -69,13 +72,17 @@ To update, replace the extracted files with the newest release, then click **Rel
 
 ## Usage
 
-Open a normal website and click the extension icon. Choose one action:
+Open a normal website, click the extension icon, and select a format. Hover, focus, or click **i** to learn when to use it. Press Escape to close the explanation.
 
 | Button | Result |
 | --- | --- |
-| **COPY PNG** | Copy a full-page lossless `image/png` without reducing pixels. |
+| **COPY selected format** | Copy a lossless PNG or the selected textual source format. Save and attach PDF and ZIP as files. |
 | **COPY TEXT FOR AI** | Copy the page's rendered text, title, and URL as plain text. |
 | **SAVE AS…** | Save the selected format through the browser's save dialog. |
+
+Use **Complete archive (ZIP)** for a research handoff or backup. It attempts to include `page.mhtml`, `page.pdf`, `page.html`, `page.md`, `page.txt`, `page.json`, inline SVG source graphics, and native PNG tiles. `manifest.json` lists included files and omitted exports with their reasons. Missing screenshots do not discard other captured representations. A navigation still aborts the export. Representations are captured in sequence, not atomically.
+
+Use **Markdown** for readable AI input, **JSON** for structured extraction, **MHTML** for offline viewing in Chrome/Edge, and **HTML** for current DOM code. HTML copying pastes code as plain text. Saved HTML blocks scripts but can still depend on remote resources. SVG exports remove scripts, handlers, and unsafe markup through DOMPurify; they do not turn the whole page into vectors. These are snapshots, not application source code or server backups. The [researched format guide](docs/export-formats.md) compares formats, sources, and limits.
 
 For a long page in an AI chat, use **COPY TEXT FOR AI** for exact text. For visual details, save **AI tiles (ZIP)**, extract it, and attach the numbered PNGs individually in order. Each tile is at most 1,536 × 1,536 device pixels, with 64 pixels of overlap so text at a boundary remains visible. The archive includes `page.txt` and `tiles.json` with tile positions and pixel ratio. A chat must support ZIP extraction to read the archive directly.
 
@@ -83,7 +90,7 @@ PNG compression is lossless, but a receiving chat can still resize any pasted or
 
 PDF uses Chrome's print renderer and keeps selectable text where the page provides it. Print styles and pagination can change the layout. TXT and text copying use the main document's rendered text. They do not perform OCR or extract text from images, canvas, embedded frames, or content absent from the DOM. Keep the PNG tiles for those visual details.
 
-Text copying and TXT export read the current document immediately without scrolling or waiting for images. Screenshot and PDF exports prepare lazy content first.
+Text, Markdown, JSON, HTML, and SVG exports read the current document without scrolling or waiting for images. Screenshot, PDF, MHTML, and complete archive exports prepare lazy content first.
 
 Keep the popup open until copying finishes. Close DevTools on the source tab before capture. Chrome briefly displays its debugger banner while Page Copy works.
 
@@ -103,8 +110,10 @@ Images retain the original device pixels at the current page zoom. Large pages a
 | Preparation | Up to 20 seconds of automatic page traversal, then bounded image loading waits. |
 | Capture size | Up to 256 tiles. |
 | Screenshot command | Up to 30 seconds per tile, then an error and cleanup if Chrome stops responding. |
-| PNG, ZIP, or PDF transfer | Up to 40 MB per export. Larger files fail with an explicit error. |
+| Export transfer | Up to 40 MB per export. Larger files fail with an explicit error. |
 | Page text | Up to 8 million characters. Larger text fails explicitly. |
+| Structured page data | Up to 100,000 DOM elements and 8 MB UTF-8, shared across text representations in a complete ZIP. Failed formats are omitted with reasons. |
+| Inline SVGs | Up to 128 root SVG graphics. |
 
 Only the main document's scrollable area is captured. Independently scrolling panels, virtualized lists, infinite feeds, protected video, PDFs, browser pages, and restricted sites cannot be guaranteed as complete screenshots. Slow images and pages that continue changing size after three capture attempts can report an error. Animations and video remain live during capture.
 
@@ -123,7 +132,7 @@ Screenshots and exported page text stay on your device. Page Copy never reads yo
 
 ## Development
 
-Requires Node.js 22.13+ and npm. The installed extension has no runtime dependencies or build requirement.
+Requires Node.js 22.13+ and npm. Release ZIPs include local conversion libraries and need no build. For development, package and load `dist/page-copy-extension` so the libraries are present.
 
 ```sh
 npm ci --ignore-scripts
