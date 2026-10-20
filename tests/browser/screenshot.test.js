@@ -71,17 +71,15 @@ async function verifyExport(context, source, bytes, format, origin, partial, fil
       for (const type of ["md", "json", "html", "mhtml"]) await verifyExport(context, source, Buffer.from(entries[`page.${type}`]), type, origin);
       assert.match(new TextDecoder().decode(entries["page.txt"]), /FINAL PIXEL/);
       assert.equal(Buffer.from(entries["page.pdf"]).subarray(0, 5).toString(), "%PDF-");
-      if (["resize", "loading"].includes(partial)) {
-        assert.ok(manifest.warnings.some((warning) => warning.format === "png" && (partial === "resize" ? /kept changing size/ : /images.*load/i).test(warning.reason)));
-        assert.equal(entries["tiles.json"], undefined);
-      } else {
-        if (partial === "svg") assert.ok(manifest.warnings.some((warning) => warning.format === "svg" && /128/.test(warning.reason)));
-        else assert.deepEqual(manifest.warnings, []);
-        const {tiles} = JSON.parse(new TextDecoder().decode(entries["tiles.json"]));
-        for (const tile of tiles) {
-          assert.equal(Buffer.from(entries[tile.name]).readUInt32BE(16), tile.width);
-          assert.equal(Buffer.from(entries[tile.name]).readUInt32BE(20), tile.height);
-        }
+      if (partial === "resize") assert.ok(manifest.warnings.some((warning) => warning.format === "png" && /kept growing/.test(warning.reason)));
+      else if (partial === "loading") assert.ok(manifest.warnings.some((warning) => warning.format === "preparation" && /images.*load/i.test(warning.reason)));
+      else if (partial === "svg") assert.ok(manifest.warnings.some((warning) => warning.format === "svg" && /128/.test(warning.reason)));
+      else assert.deepEqual(manifest.warnings, []);
+      const manifestTiles = JSON.parse(new TextDecoder().decode(entries["tiles.json"]));
+      if (partial === "resize") assert.equal(manifestTiles.height, await source.evaluate(() => document.body.scrollHeight - 300));
+      for (const tile of manifestTiles.tiles) {
+        assert.equal(Buffer.from(entries[tile.name]).readUInt32BE(16), tile.width);
+        assert.equal(Buffer.from(entries[tile.name]).readUInt32BE(20), tile.height);
       }
     }
   }
@@ -134,10 +132,11 @@ async function openPopup(context, source, extensionId) {
   const {targetInfos} = await protocol.send("Target.getTargets", {filter: [{type: "tab"}]});
   const tab = targetInfos.find((target) => target.url === source.url());
   assert.ok(tab, "The source must be a real browser tab.");
+  const previous = new Set((await protocol.send("Target.getTargets")).targetInfos.map((target) => target.targetId));
   await protocol.send("Extensions.triggerAction", {id: extensionId, targetId: tab.targetId});
   const popup = await waitFor(async () => {
     const targets = await protocol.send("Target.getTargets");
-    return targets.targetInfos.find((target) => target.url === `chrome-extension://${extensionId}/popup.html`);
+    return targets.targetInfos.find((target) => !previous.has(target.targetId) && target.url === `chrome-extension://${extensionId}/popup.html`);
   }, 5000);
   const {sessionId} = await protocol.send("Target.attachToTarget", {targetId: popup.targetId, flatten: false});
   const pending = new Map();
@@ -193,7 +192,7 @@ async function openPopup(context, source, extensionId) {
   };
 }
 
-async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1, action = "copy", format = "png", noiseHeight = 0, closePopup = false, resize = false, headed = false, slowImage = false, navigate = false, malformedHead = false, excessSvg = false}) {
+async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1, action = "copy", format = "png", noiseHeight = 0, closePopup = false, resize = false, headed = false, slowImage = false, slowFont = false, growOnScroll = false, nativeFailure = false, navigate = false, malformedHead = false, excessSvg = false, repeatedSvg = false}) {
   let ratio = dpr * zoom;
   await mkdir(temporary, {recursive: true});
   const profile = await mkdtemp(resolve(temporary, "chromium-"));
@@ -215,8 +214,13 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
       document.documentElement.insertBefore(script, document.head);
     });
     if (excessSvg) await source.evaluate(() => {
-      for (let index = 0; index < 128; index++) document.body.append(document.createElementNS("http://www.w3.org/2000/svg", "svg"));
+      for (let index = 0; index < 128; index++) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", `0 0 ${index + 1} 1`);
+        document.body.append(svg);
+      }
     });
+    if (repeatedSvg) await source.evaluate(() => { for (let index = 0; index < 256; index++) document.body.append(document.querySelector("svg").cloneNode(true)); });
     if (zoom !== 1) await worker.evaluate(async (zoom) => {
       const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
       await chrome.tabs.setZoom(tab.id, zoom);
@@ -247,7 +251,16 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
     assert.ok(Math.abs(await source.evaluate(() => devicePixelRatio) - ratio) < 0.001);
     ratio = await source.evaluate(() => devicePixelRatio);
     const originalScroll = await source.evaluate(() => scrollY);
-    const verifyPixels = !noiseHeight && !resize && !closePopup && !navigate && ["png", "zip"].includes(format);
+    if (growOnScroll) await source.evaluate(() => window.addEventListener("scroll", () => { document.body.style.height = `${document.body.scrollHeight + 1000}px`; }));
+    if (nativeFailure) await worker.evaluate(() => {
+      const send = chrome.debugger.sendCommand.bind(chrome.debugger);
+      let fail = true;
+      chrome.debugger.sendCommand = (target, method, params) => {
+        if (method === "Page.captureSnapshot" && fail) { fail = false; return Promise.reject(new Error("Injected native capture failure")); }
+        return send(target, method, params);
+      };
+    });
+    const verifyPixels = !noiseHeight && (!resize || resize === "always") && !closePopup && !navigate && ["png", "zip"].includes(format);
     if (verifyPixels) await worker.evaluate(() => {
       const send = chrome.runtime.sendMessage.bind(chrome.runtime);
       globalThis.captureTiles = [];
@@ -274,11 +287,17 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
       paragraph.textContent = "malformed \ud800";
       document.body.append(paragraph);
     });
-    if (resize === "always") await popup.evaluate(`(() => {
+    if (slowFont) await source.evaluate(() => {
+      const font = new FontFace("Stalled", "url(/never.woff2)", {display: "swap"});
+      document.fonts.add(font);
+      font.load().catch(() => {});
+      document.body.style.fontFamily = "Stalled, Arial";
+    });
+    if (["always", "shrink"].includes(resize)) await popup.evaluate(`(() => {
       new MutationObserver(() => {
         if (/^Capturing 1 \\//.test(document.querySelector("#status").textContent)) {
           chrome.tabs.query({active: true, currentWindow: true}).then(([tab]) => chrome.scripting.executeScript({target: {tabId: tab.id}, func: () => {
-            document.body.style.height = (document.body.scrollHeight + 300) + "px";
+            document.body.style.height = (document.body.scrollHeight + ${resize === "shrink" ? -300 : 300}) + "px";
             document.body.dataset.captureGrowthCount = String(Number(document.body.dataset.captureGrowthCount || 0) + 1);
           }}));
         }
@@ -306,17 +325,36 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
     } else if (navigate) {
       await waitFor(async () => (await worker.evaluate(() => chrome.runtime.getContexts({contextTypes: ["OFFSCREEN_DOCUMENT"]}))).length === 0);
     } else {
-      const state = await waitFor(async () => {
+      const finished = () => waitFor(async () => {
         const value = await popup.evaluate('({busy: document.querySelector("#save-button").disabled, status: document.querySelector("#status").textContent})');
         return !value.busy && value;
       });
+      let state = await finished();
+      if (nativeFailure) {
+        assert.match(state.status, /Injected native capture failure/);
+        await worker.evaluate(async () => {
+          const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+          await chrome.debugger.attach({tabId: tab.id}, "1.3");
+          await chrome.debugger.detach({tabId: tab.id});
+        });
+        assert.equal(await source.evaluate(() => scrollY), originalScroll);
+        await popup.click(action);
+        state = await finished();
+      }
+      if (["mhtml", "pdf", "png", "bundle"].includes(format) && (slowImage || slowFont)) assert.match(state.status, format === "bundle" ? /archive notice/ : /images or fonts are still loading/);
+      if (growOnScroll) assert.match(state.status, /page grew/);
+      if (width === 20000 && format === "mhtml") assert.match(state.status, /Lazy loading stopped after 20 seconds/);
       // Fractional display scales can make the viewport wider than the fixture body.
       const metricsSession = await context.newCDPSession(source);
       const {cssContentSize} = await metricsSession.send("Page.getLayoutMetrics");
       await metricsSession.detach();
       const expectedWidth = Math.ceil(cssContentSize.width * ratio);
-      const expectedHeight = Math.ceil(cssContentSize.height * ratio);
-      if (resize === "always" && format !== "bundle") {
+      const expectedHeight = Math.ceil((resize === "always" ? height + 600 : cssContentSize.height) * ratio);
+      if (resize === "always") {
+        assert.match(state.status, format === "bundle" ? /archive notice/ : /page kept growing/);
+        assert.equal(await source.evaluate(() => document.body.dataset.captureGrowthCount), "3");
+      }
+      if (resize === "shrink") {
         assert.match(state.status, /kept changing size after 3 capture attempts/);
         assert.equal(await source.evaluate(() => document.body.dataset.captureGrowthCount), "3");
       } else if (noiseHeight === 12000) {
@@ -345,6 +383,7 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
           const entries = unzipSync(file);
           assert.match(new TextDecoder().decode(entries["page.txt"]), /Příliš žluťoučký kůň/);
           const manifest = JSON.parse(new TextDecoder().decode(entries["tiles.json"]));
+          if (resize === "always") assert.ok(manifest.warnings.some((warning) => /kept growing/.test(warning.reason)));
           assert.equal(manifest.width, expectedWidth);
           assert.equal(manifest.height, expectedHeight);
           assert.equal(manifest.pixelRatio, ratio);
@@ -419,7 +458,7 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
         assert.deepEqual(image.top, [220, 30, 30]);
         assert.deepEqual(image.middle, [20, 180, 40]);
         assert.deepEqual(image.lazy, [180, 20, 200]);
-        assert.deepEqual(image.last, [20, 60, 210]);
+        if (resize !== "always") assert.deepEqual(image.last, [20, 60, 210]);
         assert.notDeepEqual(image.seam, image.top, "The fixed header must not repeat at tile boundaries.");
       }
     }
@@ -431,6 +470,12 @@ async function scenario(origin, {width = 1200, height = 9831, dpr = 1, zoom = 1,
       await chrome.debugger.detach({tabId: tab.id});
     });
     assert.deepEqual(popup.errors, []);
+    if (action === "save" && slowImage && ["mhtml", "pdf", "png", "bundle"].includes(format)) {
+      await popup.close().catch((error) => assert.match(error.message, /No target with given id found/));
+      popup.dispose();
+      popup = await openPopup(context, source, extensionId);
+      assert.match(await popup.evaluate('document.querySelector("#status").textContent'), /Last export:.*images or fonts are still loading/);
+    }
   } finally {
     popup?.dispose();
     await context?.close();
@@ -447,6 +492,9 @@ before(async () => {
     if (request.url === "/never.svg") {
       response.writeHead(200, {"Content-Type": "image/svg+xml"});
       response.write("<svg");
+    } else if (request.url === "/never.woff2") {
+      response.writeHead(200, {"Content-Type": "font/woff2"});
+      response.write("wOF2");
     } else if (request.url === "/fixture.css") {
       response.setHeader("Content-Type", "text/css");
       response.end("h2 { color: rgb(12, 34, 56); }");
@@ -486,8 +534,19 @@ const scenarios = [
   ["copy current HTML code", {format: "html"}],
   ["save and reopen MHTML offline with its loaded resources", {action: "save", format: "mhtml"}],
   ["copy MHTML source text", {format: "mhtml"}],
+  ["100,000-pixel finite page saves MHTML without a preparation error", {height: 100000, action: "save", format: "mhtml"}],
+  ["save MHTML with a stalled image", {action: "save", format: "mhtml", slowImage: true}],
+  ["copy MHTML with a stalled image", {format: "mhtml", slowImage: true}],
+  ["MHTML finishes on a page that grows with every scroll", {action: "save", format: "mhtml", growOnScroll: true}],
+  ["MHTML saves a wide document when the loading budget expires", {width: 20000, height: 20000, action: "save", format: "mhtml"}],
+  ["MHTML saves with a stalled font", {action: "save", format: "mhtml", slowFont: true}],
+  ["MHTML native failure cleans up and permits a successful retry", {action: "save", format: "mhtml", nativeFailure: true}],
+  ["PDF saves with a stalled image", {action: "save", format: "pdf", slowImage: true}],
+  ["PDF saves with a stalled font", {action: "save", format: "pdf", slowFont: true}],
+  ["PNG captures available native pixels with an explicit stalled-image notice", {slowImage: true}],
   ["save native SVG graphics as a ZIP", {action: "save", format: "svg"}],
   ["copy native SVG code", {format: "svg"}],
+  ["SVG exports repeated page icons once instead of failing its unique-asset limit", {action: "save", format: "svg", repeatedSvg: true}],
   ["complete archive contains page representations and native visuals", {action: "save", format: "bundle"}],
   ["complete archive preserves other formats when screenshot resizing never stops", {action: "save", format: "bundle", resize: "always"}],
   ["complete archive retains other formats when SVG extraction exceeds its limit", {action: "save", format: "bundle", excessSvg: true}],
@@ -495,7 +554,9 @@ const scenarios = [
   ["text export works with stalled images and malformed Unicode", {action: "save", format: "txt", slowImage: true}],
   ["save PDF with native text fonts in a headed browser", {action: "save", format: "pdf", headed: process.platform === "win32"}],
   ["page growth during capture retries with the complete new height", {resize: true}],
-  ["a continuously growing page stops safely after three attempts", {resize: "always"}],
+  ["a continuously growing page returns native pixels with an explicit area notice after three attempts", {resize: "always"}],
+  ["AI tile ZIP records the captured area and notice on a continuously growing page", {resize: "always", action: "save", format: "zip"}],
+  ["a continuously shrinking page rejects unstable geometry after three attempts", {resize: "shrink"}],
   ["horizontal overflow is included", {width: 4301}],
   ["Save as downloads a real PNG above 2 MB", {action: "save", noiseHeight: 3200}],
   ["oversized PNG fails cleanly", {height: 15000, noiseHeight: 12000}],

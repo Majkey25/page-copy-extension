@@ -94,12 +94,16 @@ export function readExport(format) {
     });
     attempt("svg", () => {
       const svgs = [...document.querySelectorAll("svg")].filter((svg) => !svg.parentElement?.closest("svg"));
-      if (svgs.length > 128) throw new Error("The page contains more than 128 inline SVGs. Export a smaller page.");
       if (format === "svg" && !svgs.length) throw new Error("This page has no inline SVG graphics. Use PDF for a scalable document or PNG for pixels.");
-      for (const [index, svg] of svgs.entries()) {
+      const unique = new Set();
+      for (const svg of svgs) {
         const copy = inert.importNode(svg, true);
         globalThis.DOMPurify.sanitize(copy, {USE_PROFILES: {svg: true, svgFilters: true}, IN_PLACE: true});
-        add(`svg/svg-${String(index + 1).padStart(3, "0")}.svg`, new XMLSerializer().serializeToString(copy));
+        const markup = new XMLSerializer().serializeToString(copy);
+        if (unique.has(markup)) continue;
+        if (unique.size >= 128) throw new Error("The page contains more than 128 unique inline SVGs. Export a smaller page.");
+        add(`svg/svg-${String(unique.size + 1).padStart(3, "0")}.svg`, markup);
+        unique.add(markup);
       }
     });
     return {files, summary, warnings};

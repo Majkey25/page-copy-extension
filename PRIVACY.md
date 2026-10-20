@@ -10,4 +10,6 @@ The extension temporarily scrolls the selected page to load content and restores
 
 Temporary image assembly documents are closed after the operation. Your saved files and clipboard contents remain until you delete or replace them. Uninstalling the extension removes the extension, but does not delete files you saved or clear your clipboard.
 
+Notices from the last save are kept in that tab's extension tooltip and shown when the popup reopens. The next save replaces the notice, and Chrome removes tab-specific action state when the tab closes. No page content is stored there.
+
 Source and contact: https://github.com/Majkey25/page-copy-extension

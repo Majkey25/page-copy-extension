@@ -9,6 +9,12 @@ const info = document.querySelector("#format-info");
 let running = false;
 let pinned = false;
 
+const [activeTab] = await chrome.tabs.query({active: true, currentWindow: true});
+if (activeTab?.id) {
+  const title = await chrome.action.getTitle({tabId: activeTab.id});
+  if (title.startsWith("Last export: ")) status.textContent = title;
+}
+
 saveFormat.replaceChildren(...Object.entries(FORMATS).map(([value, format]) => new Option(format.label, value)));
 
 function updateFormat() {
@@ -58,8 +64,9 @@ async function capture(action, format) {
       await navigator.clipboard.write([new ClipboardItem({"image/png": blob})]);
       status.textContent = "Copied lossless PNG. The receiving chat may resize it. Use text or AI tiles for long pages.";
     } else {
-      status.textContent = result.warnings?.length ? `Save dialog opened. ${result.warnings.length} export(s) were skipped; read manifest.json for reasons.` : "Save dialog opened.";
+      status.textContent = "Save dialog opened.";
     }
+    if (result.warnings?.length) status.textContent += format === "bundle" ? ` ${result.warnings.length} archive notice(s); read manifest.json for details.` : ` ${result.warnings.map((warning) => warning.reason).join(" ")}`;
   } catch (error) {
     status.dataset.error = "true";
     status.textContent = error instanceof Error ? error.message : "Capture failed. Please try again.";

@@ -56,39 +56,42 @@ export async function preparePage() {
   const deadline = Date.now() + 20_000;
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const imageEvents = new AbortController();
+  const warnings = [];
   try {
-    // Visit the page to trigger lazy images and intersection observers.
+    // Visit the initial document once; infinite feeds must not move the finish line.
+    const width = Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0);
+    const height = Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0);
+    scan:
     for (let y = 0; ; y += Math.max(1, window.innerHeight * 0.8)) {
-      const width = Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0);
       for (let x = 0; ; x += Math.max(1, window.innerWidth * 0.8)) {
-        if (Date.now() > deadline) throw new Error("Page preparation timed out. Very long or continuously growing pages may exceed the capture limit.");
+        if (Date.now() > deadline) {
+          warnings.push("Lazy loading stopped after 20 seconds. The export contains the currently loaded page; some resources may be missing.");
+          break scan;
+        }
         window.scrollTo({left: x, top: y, behavior: "instant"});
-        await delay(120);
+        await delay(50);
         if (x + window.innerWidth >= width) break;
       }
-      const height = Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0);
-      if (y + window.innerHeight >= height) {
-        await delay(250);
-        const settledHeight = Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0);
-        if (y + window.innerHeight >= settledHeight) break;
-      }
+      if (y + window.innerHeight >= height) break;
     }
-    await Promise.race([
+    const loaded = await Promise.race([
       Promise.all([
         document.fonts.ready,
         ...[...document.images].filter((image) => !image.complete && image.getClientRects().length > 0).map((image) => new Promise((resolve) => {
           image.addEventListener("load", resolve, {once: true, signal: imageEvents.signal});
           image.addEventListener("error", resolve, {once: true, signal: imageEvents.signal});
         })),
-      ]),
-      delay(3000).then(() => { throw new Error("Some page images are still loading. Wait a moment, then try again."); }),
+      ]).then(() => true),
+      delay(3000).then(() => false),
     ]);
+    if (!loaded) warnings.push("Some images or fonts are still loading. The export contains the resources available now.");
+    if (Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight || 0) > height || Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0) > width) warnings.push("The page grew while loading. Newly added or virtualized content may be incomplete.");
     window.scrollTo({left: 0, top: 0, behavior: "instant"});
     await delay(150);
-    return {position};
+    return {position, warnings};
   } catch (error) {
     window.scrollTo({left: position.x, top: position.y, behavior: "instant"});
-    return {error: error.message};
+    return {position, error: error.message};
   } finally {
     imageEvents.abort();
     style.remove();

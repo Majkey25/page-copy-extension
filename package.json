@@ -1,6 +1,6 @@
 {
   "name": "page-copy-extension",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Copy lossless screenshots or page source. Save complete archives, offline pages, and AI-ready text.",
   "type": "module",

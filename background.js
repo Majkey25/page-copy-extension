@@ -59,7 +59,7 @@ async function captureImage(tabId, documentId, target, tiled) {
       progress("Page resized. Retrying capture…");
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    const metrics = await chrome.debugger.sendCommand(target, "Page.getLayoutMetrics");
+    const metrics = await captureCommand(target, "Page.getLayoutMetrics");
     const {width, height} = metrics.cssContentSize;
     const zoom = await chrome.tabs.getZoom(tabId);
     const [page] = await chrome.scripting.executeScript({target: {tabId, documentIds: [documentId]}, func: readPage, args: [false]});
@@ -71,8 +71,11 @@ async function captureImage(tabId, documentId, target, tiled) {
       const shot = await captureCommand(target, "Page.captureScreenshot", {format: "png", clip: tile.clip, captureBeyondViewport: true, fromSurface: true});
       await imageCommand("tile", {data: shot.data, destination: tile.destination, padding: Math.ceil(plan.pixelRatio / zoom)});
     }
-    const after = await chrome.debugger.sendCommand(target, "Page.getLayoutMetrics");
-    if (Math.ceil(after.cssContentSize.width * plan.pixelRatio) === plan.width && Math.ceil(after.cssContentSize.height * plan.pixelRatio) === plan.height) return plan;
+    const after = await captureCommand(target, "Page.getLayoutMetrics");
+    const widthAfter = Math.ceil(after.cssContentSize.width * plan.pixelRatio);
+    const heightAfter = Math.ceil(after.cssContentSize.height * plan.pixelRatio);
+    if (widthAfter === plan.width && heightAfter === plan.height) return plan;
+    if (attempt === 2 && widthAfter === plan.width && heightAfter > plan.height) return {...plan, warning: "The page kept growing. Captured the area measured at the start of the final attempt; newly added content is outside the image."};
   }
   throw new Error("The page kept changing size after 3 capture attempts. Pause live content or use text/PDF.");
 }
@@ -91,7 +94,8 @@ async function capture(tabId, action, format) {
     if (!/^https?:\/\//i.test(tab.url || "")) throw new Error("Open a normal website. Browser pages and PDFs are not supported.");
     const bundle = format === "bundle";
     const warnings = [];
-    const save = async (url, warnings = []) => {
+    const save = async (url) => {
+      await chrome.action.setTitle({tabId, title: warnings.length ? `Last export: ${warnings.map((warning) => warning.reason).join(" ")}` : "Page Copy"});
       await chrome.downloads.download({url, filename: screenshotFilename(tab.title, FORMATS[format].extension), saveAs: true});
       return {ok: true, warnings};
     };
@@ -126,6 +130,7 @@ async function capture(tabId, action, format) {
     position = prepared?.result?.position;
     documentId = prepared?.documentId;
     if (!documentId || (!prepared.result?.error && !position)) throw new Error("The page changed during capture. Please try again.");
+    for (const reason of prepared.result?.warnings || []) warnings.push({format: "preparation", reason});
     const verifyDocument = async () => {
       const [page] = await chrome.scripting.executeScript({target: {tabId, documentIds: [documentId]}, func: readPage, args: [false]});
       if (!page?.result) throw new Error("The page changed during export. Please try again.");
@@ -135,7 +140,7 @@ async function capture(tabId, action, format) {
       await verifyDocument();
       if (action === "copy") {
         if (file.text.length > 8_000_000) throw new Error("The MHTML is too large for source-text copying. Save and attach the file instead.");
-        return {ok: true, text: file.text};
+        return {ok: true, text: file.text, warnings};
       }
       return save(file.base64 ? `data:application/pdf;base64,${file.base64}` : textDataUrl(file.text, FORMATS.mhtml.mime));
     }
@@ -145,6 +150,7 @@ async function capture(tabId, action, format) {
     try {
       if (prepared.result?.error) await imageCommand("start", {tiled: true});
       else plan = await captureImage(tabId, documentId, target, bundle || format === "zip");
+      if (plan?.warning) warnings.push({format: "png", reason: plan.warning});
     }
     catch (error) {
       if (!bundle) throw error;
@@ -172,10 +178,10 @@ async function capture(tabId, action, format) {
     if (!finishedPage?.result) throw new Error("The page changed during export. Please try again.");
     const {dataUrl} = await imageCommand("finish", {
       width: plan?.width, height: plan?.height, pixelRatio: plan?.pixelRatio, text: finishedPage.result.text,
-      bundle, guide: FORMATS.bundle.detail,
+      bundle, guide: FORMATS.bundle.detail, warnings,
       manifest: bundle ? {schemaVersion: 1, source: tab.url, title: tab.title, capturedAt: new Date().toISOString(), warnings} : undefined,
     });
-    return action === "save" ? save(dataUrl, warnings) : {ok: true, dataUrl};
+    return action === "save" ? save(dataUrl) : {ok: true, dataUrl, warnings};
   } finally {
     if (position && documentId) {
       try { await chrome.scripting.executeScript({target: {tabId, documentIds: [documentId]}, func: restorePage, args: [position]}); }

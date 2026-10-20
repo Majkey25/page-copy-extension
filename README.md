@@ -92,11 +92,13 @@ PDF uses Chrome's print renderer and keeps selectable text where the page provid
 
 Text, Markdown, JSON, HTML, and SVG exports read the current document without scrolling or waiting for images. Screenshot, PDF, MHTML, and complete archive exports prepare lazy content first.
 
+Preparation visits the page's initial area once instead of following an infinite feed. A loading deadline or stalled image/font produces a notice and exports the currently available content. Saved-export notices remain in the tab's extension tooltip and reappear when you reopen the popup; the next save replaces them. AI tile ZIPs retain notices in `tiles.json`, and complete ZIPs retain them in `manifest.json`.
+
 Keep the popup open until copying finishes. Close DevTools on the source tab before capture. Chrome briefly displays its debugger banner while Page Copy works.
 
 ## How capture works
 
-Page Copy visits the page automatically and captures small PNG regions through Chrome's debugger API. It joins them without resampling for a single PNG, or saves them as separate lossless PNGs in an AI ZIP. Capture regions use whole device-independent points to work around Chrome's size rounding on scaled displays; only surplus right/bottom pixels are cropped. Small tiles avoid requesting a single oversized screenshot. If the document changes dimensions, the extension discards the incomplete image and retries the whole capture, up to three attempts. It restores your scroll position and detaches the debugger after completion or failure. Cleanup continues if you close the popup.
+Page Copy visits the page automatically and captures small PNG regions through Chrome's debugger API. It joins them without resampling for a single PNG, or saves them as separate lossless PNGs in an AI ZIP. Capture regions use whole device-independent points to work around Chrome's size rounding on scaled displays; only surplus right/bottom pixels are cropped. Small tiles avoid requesting a single oversized screenshot. If the document changes dimensions, the extension retries the whole capture, up to three attempts. If the page still grows vertically with the same width, it keeps the final attempt's measured area and reports that newly added content is outside the image. Shrinking pages or changing widths still fail explicitly after three attempts. It restores your scroll position and detaches the debugger after completion or failure. Cleanup continues if you close the popup.
 
 The extension uses the same rendering engine as DevTools. It cannot bypass browser restrictions or enterprise capture policies.
 
@@ -107,15 +109,15 @@ Images retain the original device pixels at the current page zoom. Large pages a
 | Limit | Behavior |
 | --- | --- |
 | Single PNG | At most 64 million pixels and 32,767 pixels per side; larger captures fail with alternatives. |
-| Preparation | Up to 20 seconds of automatic page traversal, then bounded image loading waits. |
+| Preparation | A 20-second scan budget on a responsive page, then up to 3 seconds for images/fonts. Incomplete loading produces notices. |
 | Capture size | Up to 256 tiles. |
 | Screenshot command | Up to 30 seconds per tile, then an error and cleanup if Chrome stops responding. |
 | Export transfer | Up to 40 MB per export. Larger files fail with an explicit error. |
 | Page text | Up to 8 million characters. Larger text fails explicitly. |
 | Structured page data | Up to 100,000 DOM elements and 8 MB UTF-8, shared across text representations in a complete ZIP. Failed formats are omitted with reasons. |
-| Inline SVGs | Up to 128 root SVG graphics. |
+| Inline SVGs | Up to 128 unique root SVG graphics after sanitization; identical icons are included once. |
 
-Only the main document's scrollable area is captured. Independently scrolling panels, virtualized lists, infinite feeds, protected video, PDFs, browser pages, and restricted sites cannot be guaranteed as complete screenshots. Slow images and pages that continue changing size after three capture attempts can report an error. Animations and video remain live during capture.
+Only the main document's scrollable area is captured. Independently scrolling panels, virtualized lists, infinite feeds, protected video, PDFs, browser pages, and restricted sites cannot be guaranteed as complete screenshots. Animations and video remain live during capture. The browser must remain responsive for page preparation and scroll restoration.
 
 ## Privacy and permissions
 
