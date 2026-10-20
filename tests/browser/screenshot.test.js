@@ -7,6 +7,8 @@ import test, {before, after} from "node:test";
 import {chromium} from "playwright";
 import {unzipSync} from "fflate";
 import {FORMATS} from "../../formats.js";
+import {readPage} from "../../capture.js";
+import {readExport} from "../../page-data.js";
 import {pathToFileURL} from "node:url";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -586,3 +588,28 @@ const scenarios = [
   ["navigation during capture never scrolls the replacement document", {navigate: true}],
 ];
 for (const [name, options] of scenarios) test(name, {timeout: 120_000}, () => scenario(origin, options));
+
+test("text exports exclude a hidden body or root without dropping display-contents text", async () => {
+  const browser = await chromium.launch({channel: "chromium"});
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<title>Text fixture</title><body>Visible text<p hidden>HIDDEN TEXT MUST NOT LEAK</p><script type="application/json">{"private":"source data"}</script></body>');
+    await page.addScriptTag({path: resolve(root, "node_modules/turndown/dist/turndown.js")});
+    await page.addScriptTag({path: resolve(root, "node_modules/turndown-plugin-gfm/dist/turndown-plugin-gfm.js")});
+    for (const target of ["body", "html", "contents", "visible"]) {
+      await page.evaluate((target) => {
+        document.documentElement.style.display = target === "html" ? "none" : "";
+        document.body.style.display = target === "body" ? "none" : target === "contents" ? "contents" : "";
+      }, target);
+      const expected = ["body", "html"].includes(target) ? "" : "Visible text";
+      const captured = await page.evaluate(readPage);
+      assert.equal(captured.text.split("\n\n").slice(1).join("\n\n"), expected);
+      const txt = await page.evaluate(readExport, "txt");
+      assert.equal(txt.files[0].text, captured.text);
+      const json = await page.evaluate(readExport, "json");
+      assert.equal(JSON.parse(json.files[0].text).text, expected);
+      const md = await page.evaluate(readExport, "md");
+      assert.equal(md.files[0].text, `Text fixture\n\nSource: about:blank\n\n${expected}\n`);
+    }
+  } finally { await browser.close(); }
+});
