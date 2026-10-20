@@ -3,7 +3,8 @@ export function readExport(format) {
   try {
     const capturedAt = new Date().toISOString();
     const summary = {title: document.title, url: location.href, capturedAt};
-    const text = `${summary.title}\n${summary.url}\n\n${document.body?.innerText || ""}`;
+    const sourceBody = document.body && [document.documentElement, document.body].every((node) => getComputedStyle(node).display !== "none") ? document.body : null;
+    const text = `${summary.title}\n${summary.url}\n\n${sourceBody?.innerText || ""}`;
     const files = [];
     const warnings = [];
     const inert = document.implementation.createHTMLDocument("");
@@ -39,7 +40,6 @@ export function readExport(format) {
     };
     attempt("txt", () => add("page.txt", text));
     attempt("md", () => {
-      const sourceBody = document.body && getComputedStyle(document.body).display !== "none" ? document.body : null;
       const body = sourceBody ? inert.importNode(sourceBody, true) : inert.createElement("div");
       const originals = sourceBody ? [sourceBody, ...sourceBody.querySelectorAll("*")] : [];
       const copies = [body, ...body.querySelectorAll("*")];
@@ -68,7 +68,7 @@ export function readExport(format) {
       const data = {
         schemaVersion: 1, ...summary, language: document.documentElement.lang,
         viewport: {width: innerWidth, height: innerHeight, pixelRatio: devicePixelRatio},
-        text: document.body?.innerText || "",
+        text: sourceBody?.innerText || "",
         headings: nodes("h1,h2,h3,h4,h5,h6").map((node) => ({level: Number(node.localName[1]), text: node.innerText})),
         links: nodes("a[href]").map((node) => ({text: node.innerText ?? node.textContent, url: address(node)})),
         images: nodes("img").map((node) => ({alt: node.alt, url: node.currentSrc || node.src, width: node.naturalWidth, height: node.naturalHeight})),

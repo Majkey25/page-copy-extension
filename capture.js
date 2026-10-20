@@ -42,7 +42,8 @@ export function screenshotFilename(title, extension = "png") {
 }
 
 export function readPage(includeText = true) {
-  const text = includeText ? `${document.title}\n${location.href}\n\n${document.body?.innerText || ""}` : "";
+  const body = includeText && document.body && [document.documentElement, document.body].every((node) => getComputedStyle(node).display !== "none") ? document.body : null;
+  const text = includeText ? `${document.title}\n${location.href}\n\n${body?.innerText || ""}` : "";
   if (text.length > 8_000_000) return {error: "The page text exceeds the safe export limit. Capture a shorter page."};
   return {pixelRatio: window.devicePixelRatio, text};
 }
